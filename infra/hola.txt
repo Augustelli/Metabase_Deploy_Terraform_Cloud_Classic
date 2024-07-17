@@ -1,0 +1,268 @@
+terraform {
+  required_providers {
+    openstack = {
+      source = "terraform-provider-openstack/openstack"
+    }
+  }
+  backend "local" {
+    path = "../tf-state/terraform.tfstate"
+  }
+  required_version = ">= 1.5"
+}
+data "openstack_networking_network_v2" "ext_net" {
+  name = "ext_net"
+}
+
+data "openstack_compute_flavor_v2" "small" {
+  vcpus = 1
+  ram   = 2048
+}
+
+data "openstack_images_image_v2" "ubuntu_2204" {
+  name        = "ubuntu_2204"
+  most_recent = true
+}
+
+data "openstack_images_image_v2" "srv_mysql_ubuntu1804" {
+  name        = "srv-mysql-ubuntu1804"
+  most_recent = true
+}
+
+data "openstack_images_image_v2" "srv_nginx_ubuntu1804" {
+  name        = "srv-nginx-ubuntu1804"
+  most_recent = true
+}
+
+
+
+resource "openstack_networking_floatingip_v2" "tf_bastion_fip" {
+  description = "tf-bastion-ip"
+  pool        = "ext_net"
+}
+
+resource "openstack_networking_floatingip_v2" "tf_lb_fip" {
+  description = "tf-lb-ip"
+  pool        = "ext_net"
+}
+resource "openstack_networking_router_v2" "tf_router" {
+  name                = "tf-router"
+  admin_state_up      = "true"
+  external_network_id = data.openstack_networking_network_v2.ext_net.id
+}
+
+resource "openstack_networking_network_v2" "tf_net" {
+  name           = "tf-net"
+  admin_state_up = "true"
+  shared         = "false"
+}
+
+resource "openstack_networking_subnet_v2" "tf_subnet" {
+  name            = "tf-subnet"
+  network_id      = openstack_networking_network_v2.tf_net.id
+  cidr            = "172.19.0.0/24"
+  ip_version      = 4
+  enable_dhcp     = "true"
+  dns_nameservers = ["8.8.8.8", "1.1.1.1"]
+}
+
+resource "openstack_networking_router_interface_v2" "tf_router_iface_internal" {
+  router_id = openstack_networking_router_v2.tf_router.id
+  subnet_id = openstack_networking_subnet_v2.tf_subnet.id
+}
+resource "openstack_compute_secgroup_v2" "tf_sg_bastion" {
+  name        = "tf_sg_bastion"
+  description = "tf_sg_bastion"
+
+  rule {
+    from_port   = 22
+    to_port     = 22
+    ip_protocol = "tcp"
+    cidr        = "0.0.0.0/0"
+  }
+  rule {
+    ip_protocol = "icmp"
+    from_port   = -1
+    to_port     = -1
+    cidr        = "0.0.0.0/0"
+  }
+}
+
+resource "openstack_compute_secgroup_v2" "tf_sg_lb" {
+  name        = "tf_sg_lb"
+  description = "tf_sg_lb"
+
+  rule {
+    from_group_id = openstack_compute_secgroup_v2.tf_sg_bastion.id
+    from_port     = -1
+    to_port       = -1
+    ip_protocol   = "icmp"
+  }
+  rule {
+    from_group_id = openstack_compute_secgroup_v2.tf_sg_bastion.id
+    from_port     = 22
+    to_port       = 22
+    ip_protocol   = "tcp"
+  }
+  rule {
+    from_port   = 80
+    to_port     = 80
+    ip_protocol = "tcp"
+    cidr        = "0.0.0.0/0"
+  }
+}
+
+resource "openstack_compute_secgroup_v2" "tf_sg_app" {
+  name        = "tf_sg_app"
+  description = "tf_sg_app"
+
+  rule {
+    from_group_id = openstack_compute_secgroup_v2.tf_sg_bastion.id
+    from_port     = -1
+    to_port       = -1
+    ip_protocol   = "icmp"
+  }
+  rule {
+    from_group_id = openstack_compute_secgroup_v2.tf_sg_bastion.id
+    from_port     = 22
+    to_port       = 22
+    ip_protocol   = "tcp"
+  }
+  rule {
+    from_group_id = openstack_compute_secgroup_v2.tf_sg_lb.id
+    from_port     = 3000
+    to_port       = 3000
+    ip_protocol   = "tcp"
+  }
+}
+
+resource "openstack_compute_secgroup_v2" "tf_sg_db" {
+  name        = "tf_sg_db"
+  description = "tf_sg_db"
+
+  rule {
+    from_group_id = openstack_compute_secgroup_v2.tf_sg_bastion.id
+    from_port     = -1
+    to_port       = -1
+    ip_protocol   = "icmp"
+  }
+  rule {
+    from_group_id = openstack_compute_secgroup_v2.tf_sg_bastion.id
+    from_port     = 22
+    to_port       = 22
+    ip_protocol   = "tcp"
+  }
+  rule {
+    from_group_id = openstack_compute_secgroup_v2.tf_sg_app.id
+    from_port     = 3306
+    to_port       = 3306
+    ip_protocol   = "tcp"
+  }
+}
+
+variable "key_name" {
+  type    = string
+  default = "-------------------- REMPLAZAR ---------------------------"
+}
+variable "google_db_name" {
+  description = "Nombre de la base de datos"
+  default     = "-------------------- REMPLAZAR ---------------------------"
+}
+
+variable "google_db_user" {
+  description = "Usuario para la base de datos"
+  default     = "-------------------- REMPLAZAR ---------------------------"
+}
+
+variable "google_db_password" {
+  description = "Contraseña para el usuario."
+  type        = string
+  sensitive   = true
+}resource "openstack_compute_instance_v2" "tf_app" {
+  name              = "metabase-ip"
+  image_id          = data.openstack_images_image_v2.ubuntu_2204.id
+  flavor_id         = data.openstack_compute_flavor_v2.small.id
+  key_pair          = var.key_name
+  security_groups   = [openstack_compute_secgroup_v2.tf_sg_app.name]
+  availability_zone = "nodos-amd-2022"
+
+    user_data = templatefile("${path.module}/templates/vm-app.init.sh", {
+    db_ip  = openstack_compute_instance_v2.tf_db.network.0.fixed_ip_v4
+    fe_fip = openstack_networking_floatingip_v2.tf_lb_fip.address,
+  })
+
+  network {
+    name = openstack_networking_network_v2.tf_net.name
+  }
+
+  depends_on = [
+    openstack_networking_subnet_v2.tf_subnet,
+  ]
+}
+resource "openstack_compute_instance_v2" "tf_bastion" {
+  name              = "tf-bastion"
+  image_id          = data.openstack_images_image_v2.ubuntu_2204.id
+  flavor_id         = data.openstack_compute_flavor_v2.small.id
+  key_pair          = var.key_name
+  security_groups   = [openstack_compute_secgroup_v2.tf_sg_bastion.name]
+  availability_zone = "nodos-amd-2022"
+
+  network {
+    name = openstack_networking_network_v2.tf_net.name
+  }
+
+  depends_on = [
+    openstack_networking_subnet_v2.tf_subnet,
+  ]
+}
+
+resource "openstack_compute_floatingip_associate_v2" "tf_bastion_fip" {
+  floating_ip = openstack_networking_floatingip_v2.tf_bastion_fip.address
+  instance_id = openstack_compute_instance_v2.tf_bastion.id
+}
+resource "openstack_compute_instance_v2" "tf_db" {
+  name              = "tf-db"
+  image_id          = data.openstack_images_image_v2.srv_mysql_ubuntu1804.id
+  flavor_id         = data.openstack_compute_flavor_v2.small.id
+  key_pair          = var.key_name
+  security_groups   = [openstack_compute_secgroup_v2.tf_sg_db.name]
+  availability_zone = "nodos-amd-2022"
+
+  user_data = templatefile("${path.module}/templates/vm-db.init.sh", {
+    db_name      = var.google_db_name
+    db_user      = var.google_db_user
+    db_password  = var.google_db_password
+    sql_file_url = "https://drive.google.com/uc?export=download&id=1AC2uvs6f2t4qrhXpz5XowSxoVXR3TfvG"
+  })
+
+  network {
+    name = openstack_networking_network_v2.tf_net.name
+  }
+  depends_on = [
+    openstack_networking_subnet_v2.tf_subnet,
+  ]
+}
+resource "openstack_compute_instance_v2" "tf_lb" {
+  name              = "tf-lb"
+  image_id          = data.openstack_images_image_v2.srv_nginx_ubuntu1804.id
+  flavor_id         = data.openstack_compute_flavor_v2.small.id
+  key_pair          = var.key_name
+  security_groups   = [openstack_compute_secgroup_v2.tf_sg_lb.name]
+  availability_zone = "nodos-amd-2022"
+
+  user_data = templatefile("${path.module}/templates/vm-lb.init.sh", {
+    app_ip = openstack_compute_instance_v2.tf_app.network.0.fixed_ip_v4
+  })
+
+  network {
+    name = openstack_networking_network_v2.tf_net.name
+  }
+
+  depends_on = [
+    openstack_networking_subnet_v2.tf_subnet,
+  ]
+}
+
+resource "openstack_compute_floatingip_associate_v2" "tf_lb_fip" {
+  floating_ip = openstack_networking_floatingip_v2.tf_lb_fip.address
+  instance_id = openstack_compute_instance_v2.tf_lb.id
+}
