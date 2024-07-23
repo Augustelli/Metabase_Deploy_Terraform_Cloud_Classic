@@ -1,4 +1,4 @@
-# Proyecto de Infraestructura con Terraform y OpenStack
+# Despliegue de Infraestructura con Terraform y OpenStack
 
 Este proyecto utiliza Terraform y OpenStack para desplegar una infraestructura de red y varias instancias de computación. El proyecto consta de varios archivos de configuración de Terraform y scripts de shell para la inicialización de las instancias.
 
@@ -10,10 +10,9 @@ Este proyecto utiliza Terraform y OpenStack para desplegar una infraestructura d
 
 3. `infra/templates/vm-lb.init.sh`: Este script se encarga de la configuración e inicialización de un balanceador de carga Nginx en una instancia de Ubuntu. Instala Nginx, configura un servidor Nginx para reenviar las solicitudes a la dirección IP de la aplicación y reinicia Nginx.
 
+## Cómo ejecutar el proyecto
 
-## Instrucciones para ejecutar el proyecto
-
-Para ejecutar este proyecto, necesitarás tener instalado Terraform y tener acceso a un proveedor de OpenStack.
+Para ejecutar este proyecto, necesitarás tener instalado Terraform y tener acceso a un proveedor de OpenStack. Sigue estos pasos:
 
 1. Configura tus credenciales de OpenStack en tu entorno o en un archivo de variables de Terraform.
 
@@ -25,14 +24,26 @@ Para ejecutar este proyecto, necesitarás tener instalado Terraform y tener acce
 
 Por favor, asegúrate de tener los permisos necesarios para ejecutar estos comandos y de tener instalado Terraform en tu sistema. Además, es posible que necesites modificar los archivos de configuración y los scripts para ajustar los nombres de las bases de datos, los nombres de usuario, las contraseñas y las direcciones IP según tu configuración específica.
 
-## Detalles adicionales
-
-El script `vm-app.init.sh` instala Java y configura varias variables de entorno que son necesarias para la aplicación. Luego, descarga un archivo JAR de la aplicación y lo ejecuta en segundo plano.
-
-El script `vm-db.init.sh` configura MySQL para permitir conexiones remotas y crea una base de datos y un usuario con todos los privilegios sobre esa base de datos. Luego, descarga un archivo SQL y lo importa a la base de datos.
-
-El script `vm-lb.init.sh` instala Nginx y configura un servidor Nginx para reenviar las solicitudes a la dirección IP de la aplicación. Luego, reinicia Nginx para que los cambios surtan efecto.
-
-## Arquitectura
+## Arquitectura del Proyecto
 
 ![Diagrama_despliegue](doc/architecture.png)
+
+## Salida de la Ejecución
+
+Una vez ejecutado el proyecto, verás la siguiente salida en tu terminal (recuerda que los valores que aparecen serán diferentes a los de la imagen):
+
+![output_terminal](doc/output.jpeg)
+
+Al ingresar a la URL de la aplicación (lb_fip.url) nos encontraremos con el menú de la página principal de Metabase.
+
+![Menu_ppal_metabase](doc/menu_ppal_metabase.png)
+
+Al seguir las configuraciones y rellenar el usuario y el uso de la aplicación nos encontraremos con la configuración de la base de datos.
+
+![Config_MB_dB](doc/config_mb_db.png)
+
+Seleccionamos MySQL y rellenamos con los datos proporcionados por nosotros. Al aceptar y terminar con la configuración veremos la pantalla principal.
+
+![Pantalla_ppal_MB](doc/pantalla_ppal_mb.png)
+
+Desde esta pantalla podremos configurar Metabase y hacer las consultas que queramos.
